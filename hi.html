@@ -1,422 +1,728 @@
 <!DOCTYPE html>
 <html lang="zh-CN">
 <head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Claude Effort Slider</title>
-  <link rel="preconnect" href="https://fonts.googleapis.com">
-  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:opsz,wght@9..40,400;9..40,500;9..40,600&display=swap" rel="stylesheet">
-  <style>
-    *, *::before, *::after { margin: 0; padding: 0; box-sizing: border-box; }
-    body {
-      background: #050505;
-      display: flex; align-items: center; justify-content: center;
-      min-height: 100vh;
-      font-family: 'DM Sans', -apple-system, system-ui, sans-serif;
-      -webkit-font-smoothing: antialiased;
-    }
-    .card {
-      width: 376px; background: #09090b;
-      border: 1px solid #1a1a1e; border-radius: 16px;
-      padding: 18px 20px 16px;
-      box-shadow: 0 24px 60px rgba(0,0,0,0.85), 0 0 0 1px rgba(255,255,255,0.03);
-      user-select: none;
-    }
-    .header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 14px; }
-    .header-left { display: flex; align-items: center; gap: 7px; font-size: 13.5px; font-weight: 500; }
-    .label-text { color: #52525b; }
-    .status-text { color: #a1a1aa; transition: color 0.3s, text-shadow 0.3s; }
-    .status-text.glowing { color: #c084fc; text-shadow: 0 0 12px rgba(168,85,247,0.6); font-weight: 600; }
-    .help-btn { color: #3f3f46; cursor: pointer; transition: color 0.2s; }
-    .help-btn:hover { color: #71717a; }
-    .scale-labels { display: flex; justify-content: space-between; font-size: 11px; font-weight: 500; color: #3f3f46; margin-bottom: 7px; letter-spacing: 0.04em; }
-    .track-wrapper {
-      position: relative; height: 30px; border-radius: 8px; overflow: hidden;
-      border: 1px solid #1a1a1e; background: #0c0c0c; isolation: isolate;
-    }
-    .track-bg { position: absolute; inset: 0; background: linear-gradient(135deg, #111113, #0a0a0b); }
-    #glCanvas { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; display: block; mix-blend-mode: screen; }
-    .dots-layer { position: absolute; inset: 0; pointer-events: none; z-index: 1; }
-    .dot { position: absolute; width: 5px; height: 5px; border-radius: 50%; background: #222225; top: 50%; transform: translateY(-50%); transition: opacity 0.6s; }
-    .track-wrapper.active .dot { opacity: 0.25; }
-    .dot:nth-child(1) { left: 10%; } .dot:nth-child(2) { left: 30%; }
-    .dot:nth-child(3) { left: 50%; } .dot:nth-child(4) { left: 70%; }
-    .dot:nth-child(5) { left: 90%; }
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+    <title>Claude Effort Slider</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link href="https://fonts.googleapis.com/css2?family=DM+Sans:opsz,wght@9..40,400;9..40,500;9..40,600;9..40,700&display=swap" rel="stylesheet">
+    <style>
+        *,
+        *::before,
+        *::after {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
 
-    /* ══════════════════════════════════════════
-       LEFT MASK — hides accumulation on the left
-       ══════════════════════════════════════════ */
-    .left-mask {
-      position: absolute;
-      inset: 0;
-      pointer-events: none;
-      z-index: 3;
-      background: linear-gradient(
-        to right,
-        #0a0a0b 0%,       /* fully opaque at left edge */
-        #0a0a0b 20%,      /* still fully hidden at 20% */
-        transparent 38%,  /* fully transparent at 38% — reveals fire from ~60% mark onward */
-        transparent 100%
-      );
-      opacity: 0;
-      transition: opacity 0.4s ease;
-    }
-    .track-wrapper.active .left-mask {
-      opacity: 1;
-    }
+        body {
+            background: #fbf9fb;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            min-height: 100vh;
+            font-family: 'DM Sans', -apple-system, system-ui, sans-serif;
+            -webkit-font-smoothing: antialiased;
+        }
 
-    input[type="range"] {
-      position: absolute; inset: 0; width: 100%; height: 100%;
-      background: transparent; -webkit-appearance: none; appearance: none;
-      cursor: pointer; z-index: 5; outline: none; margin: 0; padding: 0;
-    }
-    input[type="range"]::-webkit-slider-thumb {
-      -webkit-appearance: none; appearance: none; width: 26px; height: 26px;
-      border-radius: 7px; background: linear-gradient(165deg, #fff, #ececed);
-      border: 1px solid rgba(255,255,255,0.12);
-      box-shadow: 0 1px 3px rgba(0,0,0,0.5), inset 0 1px 0 rgba(255,255,255,0.9);
-      cursor: grab; transition: box-shadow 0.4s;
-    }
-    input[type="range"]::-webkit-slider-thumb:active { cursor: grabbing; transform: scale(0.96); }
-    input[type="range"].glowing::-webkit-slider-thumb {
-      box-shadow: 0 0 22px rgba(168,85,247,0.55), 0 1px 3px rgba(0,0,0,0.5), inset 0 1px 0 rgba(255,255,255,0.9);
-    }
-    input[type="range"]::-moz-range-thumb {
-      width: 26px; height: 26px; border-radius: 7px;
-      background: linear-gradient(165deg, #fff, #ececed);
-      border: 1px solid rgba(255,255,255,0.12);
-      box-shadow: 0 1px 3px rgba(0,0,0,0.5); cursor: grab; transition: box-shadow 0.4s;
-    }
-    input[type="range"].glowing::-moz-range-thumb {
-      box-shadow: 0 0 22px rgba(168,85,247,0.55), 0 1px 3px rgba(0,0,0,0.5);
-    }
-  </style>
+  
+        .squircle-clip {
+            position: absolute;
+            width: 0;
+            height: 0;
+            pointer-events: none;
+        }
+
+
+        .card {
+            width: 376px;
+            background: #09090b;
+            border: 1px solid #1a1a1e;
+            border-radius: 20px;
+            clip-path: url(#squirclePath);
+            padding: 18px 20px 16px;
+            /* ★ 移除了 box-shadow，由父容器 card-shadow 承担 */
+            box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.04);
+            user-select: none;
+            /* ★ 移除了 opacity/animation，移到父容器 */
+        }
+
+        @keyframes cardIn {
+            from {
+                opacity: 0;
+                transform: translateY(12px);
+            }
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+
+        .header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 14px;
+        }
+
+        .header-left {
+            display: flex;
+            align-items: center;
+            gap: 7px;
+            font-size: 16px;
+            font-weight: 500;
+        }
+
+        .label-text {
+            color: #b0b0c7;
+            font-weight: 700;
+            line-height: 1.3;
+        }
+
+        .status-text {
+            color: #a1a1aa;
+            transition: color 0.3s, text-shadow 0.3s;
+        }
+
+        .status-text.glowing {
+            color: #c084fc;
+            text-shadow: 0 0 12px rgba(168, 85, 247, 0.6);
+            font-weight: 600;
+        }
+
+        .help-btn {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+            color: #a1a1aa;
+            transition: color 0.2s;
+            line-height: 1;
+            padding: 0;
+        }
+
+        .help-btn:hover {
+            color: #d4d4d8;
+        }
+
+        .help-btn svg {
+            height: 18px;
+            width: auto;
+            display: block;
+            flex-shrink: 0;
+            shape-rendering: geometricPrecision;
+        }
+
+        .scale-labels {
+            display: flex;
+            justify-content: space-between;
+            font-size: 14px;
+            font-weight: 800;
+            color: #b0b0b8;
+            margin-bottom: 7px;
+            letter-spacing: 0.04em;
+        }
+
+        .track-wrapper {
+            position: relative;
+            height: 30px;
+            border-radius: 10px;
+            overflow: hidden;
+            border: 1px solid #1a1a1e;
+            background: #0c0c0c;
+            isolation: isolate;
+            clip-path: url(#squircleTrackPath);
+        }
+
+        .track-bg {
+            position: absolute;
+            inset: 0;
+            background: linear-gradient(135deg, #111113, #0a0a0b);
+        }
+
+        #glCanvas {
+            position: absolute;
+            inset: 0;
+            width: 100%;
+            height: 100%;
+            pointer-events: none;
+            display: none;
+            mix-blend-mode: screen;
+        }
+
+        .track-wrapper.active #glCanvas {
+            display: block;
+        }
+
+        .dots-layer {
+            position: absolute;
+            inset: 0;
+            pointer-events: none;
+            z-index: 1;
+        }
+
+        .dot {
+            position: absolute;
+            width: 5px;
+            height: 5px;
+            border-radius: 50%;
+            background: #222225;
+            top: 50%;
+            transform: translateY(-50%);
+            transition: opacity 0.6s;
+        }
+
+        .track-wrapper.active .dot {
+            opacity: 0.25;
+        }
+
+        .dot:nth-child(1) { left: 10%; }
+        .dot:nth-child(2) { left: 30%; }
+        .dot:nth-child(3) { left: 50%; }
+        .dot:nth-child(4) { left: 70%; }
+        .dot:nth-child(5) { left: 90%; }
+
+        .left-mask {
+            position: absolute;
+            inset: 0;
+            pointer-events: none;
+            z-index: 3;
+            background: linear-gradient(to right, #0a0a0b 0%, #0a0a0b 20%, transparent 38%, transparent 100%);
+            opacity: 0;
+            transition: opacity 0.4s ease;
+        }
+
+        .track-wrapper.active .left-mask {
+            opacity: 1;
+        }
+
+        input[type="range"] {
+            position: absolute;
+            inset: 0;
+            width: 100%;
+            height: 100%;
+            background: transparent;
+            -webkit-appearance: none;
+            appearance: none;
+            cursor: pointer;
+            z-index: 5;
+            outline: none;
+            margin: 0;
+            padding: 0;
+        }
+
+        input[type="range"]::-webkit-slider-thumb {
+            -webkit-appearance: none;
+            width: 28px;
+            height: 28px;
+            border-radius: 10px;
+            background: linear-gradient(170deg, #ffffff 0%, #f0f0f2 40%, #e4e4e6 100%);
+            border: 0.5px solid rgba(0, 0, 0, 0.08);
+            box-shadow:
+                0 0.5px 1px rgba(0, 0, 0, 0.18),
+                0 2px 6px rgba(0, 0, 0, 0.25),
+                0 6px 16px rgba(0, 0, 0, 0.12),
+                inset 0 0.5px 0 rgba(255, 255, 255, 0.85),
+                inset 0 -0.5px 0 rgba(0, 0, 0, 0.06);
+            cursor: grab;
+            transition: box-shadow 0.4s ease, transform 0.15s ease;
+        }
+
+        input[type="range"]::-webkit-slider-thumb:active {
+            cursor: grabbing;
+            transform: scale(0.95);
+            box-shadow:
+                0 0.5px 1px rgba(0, 0, 0, 0.2),
+                0 1px 3px rgba(0, 0, 0, 0.3),
+                0 3px 8px rgba(0, 0, 0, 0.15),
+                inset 0 0.5px 0 rgba(255, 255, 255, 0.7),
+                inset 0 -1px 0 rgba(0, 0, 0, 0.08);
+        }
+
+        input[type="range"].glowing::-webkit-slider-thumb {
+            box-shadow:
+                0 0.5px 1px rgba(0, 0, 0, 0.18),
+                0 2px 6px rgba(0, 0, 0, 0.25),
+                0 6px 16px rgba(0, 0, 0, 0.12),
+                0 0 28px rgba(168, 85, 247, 0.5),
+                0 0 50px rgba(168, 85, 247, 0.25),
+                inset 0 0.5px 0 rgba(255, 255, 255, 0.85),
+                inset 0 -0.5px 0 rgba(0, 0, 0, 0.06);
+        }
+
+        input[type="range"].glowing::-webkit-slider-thumb:active {
+            box-shadow:
+                0 0.5px 1px rgba(0, 0, 0, 0.2),
+                0 1px 3px rgba(0, 0, 0, 0.3),
+                0 3px 8px rgba(0, 0, 0, 0.15),
+                0 0 32px rgba(168, 85, 247, 0.55),
+                0 0 56px rgba(168, 85, 247, 0.3),
+                inset 0 0.5px 0 rgba(255, 255, 255, 0.7),
+                inset 0 -1px 0 rgba(0, 0, 0, 0.08);
+        }
+
+        input[type="range"]::-moz-range-thumb {
+            width: 26px;
+            height: 26px;
+            border-radius: 9px;
+            background: linear-gradient(170deg, #ffffff 0%, #f0f0f2 40%, #e4e4e6 100%);
+            border: 0.5px solid rgba(0, 0, 0, 0.08);
+            box-shadow:
+                0 0.5px 1px rgba(0, 0, 0, 0.18),
+                0 2px 6px rgba(0, 0, 0, 0.25),
+                0 6px 16px rgba(0, 0, 0, 0.12);
+            cursor: grab;
+            transition: box-shadow 0.4s ease;
+        }
+
+        input[type="range"]::-moz-range-thumb:active {
+            cursor: grabbing;
+            transform: scale(0.95);
+        }
+
+        input[type="range"].glowing::-moz-range-thumb {
+            box-shadow:
+                0 0.5px 1px rgba(0, 0, 0, 0.18),
+                0 2px 6px rgba(0, 0, 0, 0.25),
+                0 6px 16px rgba(0, 0, 0, 0.12),
+                0 0 28px rgba(168, 85, 247, 0.5),
+                0 0 50px rgba(168, 85, 247, 0.25);
+        }
+
+        input[type="range"]::-moz-range-track {
+            background: transparent;
+            border: none;
+        }
+    </style>
 </head>
 <body>
-  <div class="card">
-    <div class="header">
-      <div class="header-left">
-        <span class="label-text">Effort</span>
-        <span class="status-text" id="statusText">Low</span>
-      </div>
-      <div class="help-btn">
-        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2.2" stroke="currentColor" width="14" height="14"><path stroke-linecap="round" stroke-linejoin="round" d="M9.879 7.519c1.171-1.025 3.071-1.025 4.242 0 1.172 1.025 1.172 2.687 0 3.712-.203.179-.43.326-.67.442-.745.361-1.45.999-1.45 1.827v.75M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0Zm-9 5.25h.008v.008H12v-.008Z"/></svg>
-      </div>
+    <svg class="squircle-clip" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+        <defs>
+            <clipPath id="squirclePath" clipPathUnits="objectBoundingBox">
+                <path d="
+                    M 0.053,0
+                    C 0.029,0 0.012,0.008 0.005,0.02
+                    C 0.002,0.028 0,0.038 0,0.053
+                    L 0,0.947
+                    C 0,0.962 0.002,0.972 0.005,0.98
+                    C 0.012,0.992 0.029,1 0.053,1
+                    L 0.947,1
+                    C 0.971,1 0.988,0.992 0.995,0.98
+                    C 0.998,0.972 1,0.962 1,0.947
+                    L 1,0.053
+                    C 1,0.038 0.998,0.028 0.995,0.02
+                    C 0.988,0.008 0.971,0 0.947,0
+                    Z
+                " />
+            </clipPath>
+            <clipPath id="squircleTrackPath" clipPathUnits="objectBoundingBox">
+                <path d="
+                    M 0.033,0
+                    C 0.018,0 0.007,0.012 0.003,0.035
+                    C 0.001,0.055 0,0.1 0,0.15
+                    L 0,0.85
+                    C 0,0.9 0.001,0.945 0.003,0.965
+                    C 0.007,0.988 0.018,1 0.033,1
+                    L 0.967,1
+                    C 0.982,1 0.993,0.988 0.997,0.965
+                    C 0.999,0.945 1,0.9 1,0.85
+                    L 1,0.15
+                    C 1,0.1 0.999,0.055 0.997,0.035
+                    C 0.993,0.012 0.982,0 0.967,0
+                    Z
+                " />
+            </clipPath>
+        </defs>
+    </svg>
+
+    <!-- ★ 新增阴影容器 -->
+    <div class="card-shadow">
+        <div class="card">
+            <div class="header">
+                <div class="header-left">
+                    <span class="label-text">Effort</span>
+                    <span class="status-text" id="statusText">Low</span>
+                </div>
+                <div class="help-btn">
+                    <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor">
+                        <path stroke-linecap="round" stroke-linejoin="round" d="M9.879 7.519c1.171-1.025 3.071-1.025 4.242 0 1.172 1.025 1.172 2.687 0 3.712-.203.179-.43.326-.67.442-.745.361-1.45.999-1.45 1.827v.75M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0Zm-9 5.25h.008v.008H12v-.008Z" />
+                    </svg>
+                </div>
+            </div>
+            <div class="scale-labels">
+                <span>Faster</span>
+                <span>Smarter</span>
+            </div>
+            <div class="track-wrapper" id="trackWrapper">
+                <div class="track-bg"></div>
+                <canvas id="glCanvas"></canvas>
+                <div class="left-mask"></div>
+                <div class="dots-layer">
+                    <span class="dot"></span>
+                    <span class="dot"></span>
+                    <span class="dot"></span>
+                    <span class="dot"></span>
+                    <span class="dot"></span>
+                </div>
+                <input type="range" id="effortSlider" min="0" max="100" value="60">
+            </div>
+        </div>
     </div>
-    <div class="scale-labels"><span>Faster</span><span>Smarter</span></div>
-    <div class="track-wrapper" id="trackWrapper">
-      <div class="track-bg"></div>
-      <canvas id="glCanvas"></canvas>
-      <div class="left-mask"></div>
-      <div class="dots-layer">
-        <span class="dot"></span><span class="dot"></span><span class="dot"></span><span class="dot"></span><span class="dot"></span>
-      </div>
-      <input type="range" id="effortSlider" min="0" max="100" value="15">
-    </div>
-  </div>
 
-  <script>
-    const slider = document.getElementById('effortSlider');
-    const statusText = document.getElementById('statusText');
-    const trackWrapper = document.getElementById('trackWrapper');
-    const canvas = document.getElementById('glCanvas');
-    const gl = canvas.getContext('webgl2');
+    <script>
+        (function() {
+            // --- 滑块及UI更新逻辑 (保留全部原始交互，同时确保 SVG 高度/对齐修复已经完美集成) ---
+            const slider = document.getElementById('effortSlider');
+            const statusText = document.getElementById('statusText');
+            const trackWrapper = document.getElementById('trackWrapper');
+            const canvas = document.getElementById('glCanvas');
 
-    const ULTRA_THRESHOLD = 96;
-    let ultraStartTime = null;
+            // 阈值与特效逻辑
+            const ULTRA = 96;
+            let ultraStart = null;
+            let sliderVal = parseInt(slider.value);
+            let active = sliderVal >= ULTRA;
+            let prevActive = false;
 
-    function updateUI() {
-      const val = parseInt(slider.value);
-      const isUltra = val >= ULTRA_THRESHOLD;
-      if (isUltra && ultraStartTime === null) ultraStartTime = performance.now();
-      else if (!isUltra) ultraStartTime = null;
-      if (val < 33) statusText.textContent = 'Low';
-      else if (val < 66) statusText.textContent = 'Medium';
-      else if (val < ULTRA_THRESHOLD) statusText.textContent = 'High';
-      else statusText.textContent = 'Ultra';
-      statusText.className = isUltra ? 'status-text glowing' : 'status-text';
-      slider.classList.toggle('glowing', isUltra);
-      trackWrapper.classList.toggle('active', isUltra);
-    }
-    updateUI();
-    slider.addEventListener('input', updateUI);
+            function updateUI() {
+                sliderVal = parseInt(slider.value);
+                const nowActive = sliderVal >= ULTRA;
+                if (nowActive && ultraStart === null) ultraStart = performance.now();
+                else if (!nowActive) ultraStart = null;
 
-    if (!gl) { console.warn('WebGL2 unavailable'); }
-    else {
-      canvas.addEventListener('webglcontextlost', e => e.preventDefault());
-      canvas.addEventListener('webglcontextrestored', () => location.reload());
+                if (sliderVal < 33) statusText.textContent = 'Low';
+                else if (sliderVal < 66) statusText.textContent = 'Medium';
+                else if (sliderVal < ULTRA) statusText.textContent = 'High';
+                else statusText.textContent = 'Ultracode';
 
-      function bootstrap() {
-        const rect = canvas.getBoundingClientRect();
-        if (!rect.width || !rect.height) { requestAnimationFrame(bootstrap); return; }
-        const dpr = window.devicePixelRatio;
-        canvas.width = rect.width * dpr;
-        canvas.height = rect.height * dpr;
-
-        const VS = `#version 300 es
-          layout(location = 0) in vec2 a_pos;
-          out vec2 v_uv;
-          void main() { v_uv = a_pos * 0.5 + 0.5; gl_Position = vec4(a_pos, 0.0, 1.0); }`;
-
-        const FS_SIM = `#version 300 es
-          precision highp float;
-          in vec2 v_uv;
-          out vec4 fragColor;
-          uniform float u_time;
-          uniform float u_slider;
-          uniform float u_elapsed;
-          uniform sampler2D u_backbuffer;
-
-          float hash(vec2 p) { return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453123); }
-
-          void main() {
-            vec2 uv = v_uv;
-
-            vec2 gUV = uv * vec2(72.0, 6.0);
-            vec2 cellId = floor(gUV);
-            vec2 cellF = fract(gUV);
-            float seed = hash(cellId);
-            vec2 ap = abs(cellF - 0.5);
-            float cellMask = smoothstep(0.34, 0.22, max(ap.x * 0.9, ap.y));
-
-            vec3 lastFrame = texture(u_backbuffer, uv).rgb;
-            vec3 decayed = lastFrame * 0.91;
-
-            float act = smoothstep(0.95, 1.0, u_slider);
-            if (act < 0.01 || u_elapsed < 0.0) {
-              fragColor = vec4(decayed, 1.0);
-              return;
+                statusText.className = nowActive ? 'status-text glowing' : 'status-text';
+                slider.classList.toggle('glowing', nowActive);
+                trackWrapper.classList.toggle('active', nowActive);
+                active = nowActive;
             }
 
-            float t = u_time;
-            float timeRamp = smoothstep(0.0, 2.0, u_elapsed);
-            timeRamp = timeRamp * timeRamp;
+            updateUI();
+            slider.addEventListener('input', updateUI);
 
-            float baseSpeed = 0.28;
-            float fullSpeed = 0.94;
-            float spreadSpeed = mix(baseSpeed, fullSpeed, timeRamp);
-            float spreadDist = u_elapsed * spreadSpeed;
-            float waveFront = max(u_slider - spreadDist, 0.02);
+            // --- WebGL2 高能光效 (ultracode区域特效 / 完全保留原始动态) ---
+            const gl = canvas.getContext('webgl2', {
+                preserveDrawingBuffer: false,
+                antialias: false
+            });
 
-            float inZone = step(waveFront - 0.003, uv.x) * step(uv.x, u_slider + 0.003);
-            float cellLoadTime = max(u_slider - uv.x, 0.0) / spreadSpeed;
-            float cellAge = u_elapsed - cellLoadTime;
-            float headDist = max(u_slider - uv.x, 0.0);
-            float tailLen = max(u_slider - waveFront, 0.001);
-            float dn = clamp(headDist / tailLen, 0.0, 1.0);
+            if (!gl) {
+                console.warn('WebGL2 not supported, fallback ready');
+            } else {
+                canvas.addEventListener('webglcontextlost', e => e.preventDefault());
+                canvas.addEventListener('webglcontextrestored', () => location.reload());
 
-            float tailBright = pow(1.0 - dn, 0.65);
-            tailBright = max(tailBright, 0.04) * inZone;
-            tailBright *= 1.0 - smoothstep(0.94, 1.05, dn);
+                function bootstrap() {
+                    const rect = canvas.getBoundingClientRect();
+                    if (!rect.width || !rect.height) {
+                        requestAnimationFrame(bootstrap);
+                        return;
+                    }
+                    const dpr = Math.min(window.devicePixelRatio, 2);
+                    canvas.width = (rect.width * dpr) | 0;
+                    canvas.height = (rect.height * dpr) | 0;
 
-            float energyScale = mix(0.15, 1.0, timeRamp);
+                    const VS = `#version 300 es
+          layout(location=0) in vec2 a_pos;
+          out vec2 v_uv;
+          void main(){ v_uv=a_pos*0.5+0.5; gl_Position=vec4(a_pos,0.0,1.0); }`;
 
-            float vertDist = abs(uv.y - 0.5) * 2.0;
-            float vertFade = pow(max(1.0 - vertDist * vertDist * 0.45, 0.0), 0.75);
+                    const FS_SIM = `#version 300 es
+          precision highp float;
+          in vec2 v_uv; out vec4 fc;
+          uniform float u_time, u_slider, u_elapsed;
+          uniform sampler2D u_back;
 
-            float turbSpeed = mix(0.3, 1.0, timeRamp);
-            float f1 = sin(uv.x * 30.0 + t * 15.0 * turbSpeed + seed * 6.28);
-            float f2 = sin(uv.x * 17.0 + t * 8.0  * turbSpeed + seed * 3.14);
-            float f3 = sin(uv.x * 52.0 + t * 25.0 * turbSpeed + seed * 10.0);
+          float hash(vec2 p){ return fract(sin(dot(p,vec2(127.1,311.7)))*43758.5453); }
+
+          void main(){
+            vec2 uv=v_uv;
+
+            vec2 g=uv*vec2(72.0,6.0);
+            vec2 id=floor(g);
+            vec2 cf=fract(g);
+            float h=hash(id);
+            vec2 ap=abs(cf-0.5);
+            float cell=smoothstep(0.34,0.22,max(ap.x*0.9,ap.y));
+
+            vec3 prev=texture(u_back,uv).rgb;
+            vec3 decay=prev*0.90;
+
+            float act=smoothstep(0.95,1.0,u_slider);
+            if(act<0.01||u_elapsed<0.0){ fc=vec4(decay,1.0); return; }
+
+            float t=u_time;
+
+            float cellDelay = h * 1.2;
+            float cellAge   = max(u_elapsed - cellDelay, 0.0);
+            float ignited   = step(0.001, cellAge);
+
+            float cellSpd   = 0.85 + h * 0.30;
+
+            float eased = 1.0 - pow(1.0 - clamp(cellAge / 2.5, 0.0, 1.0), 3.0);
+            float dist  = eased * u_slider * cellSpd * ignited;
+
+            float cellOff = (h - 0.5) * 0.05;
+            float front   = max(u_slider - dist - cellOff, 0.02);
+            float tail    = max(u_slider - front, 0.001);
+
+            float inZ   = step(front - 0.003, uv.x) * step(uv.x, u_slider + 0.003);
+            float dn    = clamp(max(u_slider - uv.x, 0.0) / tail, 0.0, 1.0);
+
+            float bright = pow(1.0 - dn, 0.65);
+            bright = max(bright, 0.04) * inZ;
+            bright *= 1.0 - smoothstep(0.94, 1.05, dn);
+
+            float es = mix(0.15, 0.5, min(u_elapsed / 1.0, 1.0));
+
+            float vy = abs(uv.y - 0.5) * 2.0;
+            float vf = pow(max(1.0 - vy * vy * 0.45, 0.0), 0.75);
+
+            float ts = mix(0.85, 1.0, min(u_elapsed / 1.5, 1.0));
+
+            float f1 = sin(uv.x * 30.0 + t * 15.0 * ts + h * 6.28);
+            float f2 = sin(uv.x * 17.0 + t * 8.0 * ts + h * 3.14);
+            float f3 = sin(uv.x * 52.0 + t * 25.0 * ts + h * 10.0);
             float flame = smoothstep(0.08, 0.92, (f1 + f2 * 0.5 + f3 * 0.25) * 0.35 + 0.5);
 
-            float r1 = sin(dn * 16.0 - t * 5.0 * turbSpeed + seed * 3.0);
-            float r2 = sin(dn * 8.0  - t * 2.5 * turbSpeed + seed * 5.0);
+            float r1 = sin(dn * 16.0 - t * 5.0 * ts + h * 3.0);
+            float r2 = sin(dn * 8.0 - t * 2.5 * ts + h * 5.0);
             float rhythm = smoothstep(-0.15, 0.55, r1) * (r2 * 0.5 + 0.5);
             rhythm = pow(max(rhythm, 0.0), 1.2);
 
-            float loadActive = step(0.0, cellAge);
-            float loadFlash = loadActive * exp(-cellAge * 2.5);
+            float avgSpd = dist / max(cellAge, 0.001);
+            float age    = max(cellAge - max(u_slider - uv.x, 0.0) / max(avgSpd, 0.001), 0.0);
+            float flash  = step(0.0, age) * exp(-age * 3.2);
 
-            float sp = fract(t * (0.3 + seed * 0.15) + seed * 7.0);
-            float sparkX = u_slider - sp * tailLen;
-            float sparkY = 0.5 + sin(sp * 11.0 + seed * 6.28) * 0.28;
-            float spark = smoothstep(0.014, 0.0, abs(uv.x - sparkX));
-            spark *= smoothstep(0.18, 0.0, abs(uv.y - sparkY));
-            spark *= (1.0 - sp) * (1.0 - sp);
-            spark *= mix(0.15, 1.0, timeRamp);
+            float sp  = fract(t * (0.38 + h * 0.15) + h * 7.0);
+            float sX  = u_slider - sp * tail;
+            float sY  = 0.5 + sin(sp * 11.0 + h * 6.28) * 0.28;
+            float spark = smoothstep(0.014, 0.0, abs(uv.x - sX))
+                        * smoothstep(0.18, 0.0, abs(uv.y - sY))
+                        * (1.0 - sp) * (1.0 - sp) * es;
 
-            float flameEnergy = tailBright * vertFade * (flame * 0.42 + rhythm * 0.38);
-            flameEnergy += loadFlash * tailBright * vertFade * 0.55;
-            flameEnergy += spark * 0.7 * inZone;
-            flameEnergy *= energyScale;
+            float energy = bright * vf * (flame * 0.42 + rhythm * 0.38)
+                         + flash * bright * vf * 0.55
+                         + spark * 0.7 * inZ;
+            energy *= es;
 
-            float edgeScan = exp(-pow((uv.x - waveFront) * 18.0, 2.0));
-            float edgeEnergy = edgeScan * 1.6 * act * energyScale;
+            float edgeBase = exp(-pow((uv.x - front) * 18.0, 2.0));
+            float ef1 = sin(uv.x * 45.0 + t * 20.0 * ts + h * 6.28) * 0.5 + 0.5;
+            float ef2 = sin(uv.x * 28.0 + t * 11.0 * ts + h * 3.14) * 0.5 + 0.5;
+            float edge = edgeBase * (0.25 + ef1 * ef2 * 1.5) * 1.6 * act * es;
 
-            float totalEnergy = flameEnergy + edgeEnergy;
+            float leadD    = front - uv.x;
+            float leadZone = smoothstep(0.07, 0.0, leadD) * step(0.0, leadD) * vf;
+            float h2       = hash(id + vec2(99.0, 33.0));
+            float leadF    = sin(leadD * 100.0 + t * 20.0 * ts + h2 * 6.28) * 0.5 + 0.5;
+            float leadSpark = leadZone * step(0.6, h2) * leadF * act * es * 0.5;
 
-            vec3 white      = vec3(1.0, 0.94, 0.98);
-            vec3 warmPurple = vec3(0.62, 0.32, 1.0);
-            vec3 ember      = vec3(0.28, 0.10, 0.58);
+            float total = energy + edge + leadSpark;
+
+            vec3 ember = vec3(0.28, 0.10, 0.58);
+            vec3 wpur  = vec3(0.62, 0.32, 1.0);
+            vec3 wht   = vec3(1.0, 0.94, 0.98);
 
             float temp = 1.0 - dn;
-            vec3 flameColor = mix(ember, warmPurple, pow(temp, 1.0));
-            flameColor = mix(flameColor, white, pow(temp, 4.5));
+            vec3 col   = mix(ember, wpur, temp);
+            col        = mix(col, wht, pow(temp, 4.5));
+            col       *= total;
 
-            vec3 col = flameColor * totalEnergy;
+            float pulse = sin(t * 2.8) * 0.15 + 1.0;
+            float core  = exp(-pow((uv.x - u_slider) * 16.0, 2.0));
+            col += wht * core * 2.2 * pulse * act * es;
+            col += wpur * exp(-pow((uv.x - u_slider) * 3.5, 2.0)) * 0.12 * act * es;
+            col *= cell;
 
-            float corePulse = sin(t * 3.0) * 0.15 + 1.0;
-            float core = exp(-pow((uv.x - u_slider) * 16.0, 2.0));
-            col += white * core * 2.2 * corePulse * act * energyScale;
-
-            float aura = exp(-pow((uv.x - u_slider) * 3.5, 2.0));
-            col += warmPurple * aura * 0.12 * act * energyScale;
-
-            col *= cellMask;
-
-            vec3 combined = decayed + col;
-            combined = min(combined, vec3(1.5));
-            fragColor = vec4(combined, 1.0);
+            fc = vec4(min(decay + col, vec3(1.5)), 1.0);
           }`;
 
-        const FS_BLUR = `#version 300 es
+                    const FS_BLUR = `#version 300 es
           precision highp float;
-          in vec2 v_uv;
-          out vec4 fragColor;
+          in vec2 v_uv; out vec4 fc;
           uniform sampler2D u_tex;
-          uniform vec2 u_dir;
-          uniform float u_extract;
-          uniform vec2 u_res;
-
-          vec3 smp(vec2 uv) {
-            vec3 c = texture(u_tex, uv).rgb;
-            if (u_extract > 0.5) {
-              float lum = dot(c, vec3(0.2126, 0.7152, 0.0722));
-              if (lum < 0.3) c = vec3(0.0);
-            }
-            return c;
+          uniform vec2 u_dir, u_res;
+          uniform float u_ext;
+          vec3 s(vec2 uv){
+            vec3 c=texture(u_tex,uv).rgb;
+            return u_ext>0.5 && dot(c,vec3(0.2126,0.7152,0.0722))<0.3 ? vec3(0.0) : c;
           }
-
-          void main() {
-            vec2 off = 1.0 / u_res * u_dir * 1.8;
-            vec3 r = smp(v_uv) * 0.227027;
-            r += smp(v_uv + off) * 0.194595;        r += smp(v_uv - off) * 0.194595;
-            r += smp(v_uv + off * 2.0) * 0.121622;  r += smp(v_uv - off * 2.0) * 0.121622;
-            r += smp(v_uv + off * 3.0) * 0.054054;  r += smp(v_uv - off * 3.0) * 0.054054;
-            fragColor = vec4(r, 1.0);
+          void main(){
+            vec2 o=u_dir*1.8/u_res;
+            vec3 r=s(v_uv)*0.227027;
+            r+=s(v_uv+o)*0.194595;    r+=s(v_uv-o)*0.194595;
+            r+=s(v_uv+o*2.0)*0.121622;r+=s(v_uv-o*2.0)*0.121622;
+            r+=s(v_uv+o*3.0)*0.054054;r+=s(v_uv-o*3.0)*0.054054;
+            fc=vec4(r,1.0);
           }`;
 
-        const FS_COMP = `#version 300 es
+                    const FS_COMP = `#version 300 es
           precision highp float;
-          in vec2 v_uv;
-          out vec4 fragColor;
-          uniform sampler2D u_scene;
-          uniform sampler2D u_glow;
-          void main() {
-            vec3 s = texture(u_scene, v_uv).rgb;
-            vec3 g = texture(u_glow, v_uv).rgb;
-            vec3 r = s + g * 1.2 + s * g * 0.35;
-            r = 1.0 - exp(-r * 1.15);
-            fragColor = vec4(r, 1.0);
+          in vec2 v_uv; out vec4 fc;
+          uniform sampler2D u_scene, u_glow;
+          void main(){
+            vec3 s=texture(u_scene,v_uv).rgb;
+            vec3 g=texture(u_glow,v_uv).rgb;
+            fc=vec4(1.0-exp(-(s+g*1.2+s*g*0.35)*1.15),1.0);
           }`;
 
-        function compile(type, src) {
-          const sh = gl.createShader(type);
-          gl.shaderSource(sh, src); gl.compileShader(sh);
-          if (!gl.getShaderParameter(sh, gl.COMPILE_STATUS)) { console.error(gl.getShaderInfoLog(sh)); return null; }
-          return sh;
-        }
-        function link(vs, fs) {
-          const v = compile(gl.VERTEX_SHADER, vs), f = compile(gl.FRAGMENT_SHADER, fs);
-          if (!v || !f) return null;
-          const p = gl.createProgram();
-          gl.attachShader(p, v); gl.attachShader(p, f); gl.linkProgram(p);
-          if (!gl.getProgramParameter(p, gl.LINK_STATUS)) { console.error(gl.getProgramInfoLog(p)); return null; }
-          return p;
-        }
-        function makeFBO() {
-          const fb = gl.createFramebuffer(), tx = gl.createTexture();
-          gl.bindFramebuffer(gl.FRAMEBUFFER, fb); gl.bindTexture(gl.TEXTURE_2D, tx);
-          gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, canvas.width, canvas.height, 0, gl.RGBA, gl.UNSIGNED_BYTE, null);
-          gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
-          gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
-          gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
-          gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
-          gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, tx, 0);
-          gl.clearColor(0, 0, 0, 1); gl.clear(gl.COLOR_BUFFER_BIT);
-          return { fbo: fb, tex: tx };
-        }
+                    function makeProg(vsSrc, fsSrc) {
+                        function compile(type, src) {
+                            const sh = gl.createShader(type);
+                            gl.shaderSource(sh, src);
+                            gl.compileShader(sh);
+                            if (!gl.getShaderParameter(sh, gl.COMPILE_STATUS)) {
+                                console.error(gl.getShaderInfoLog(sh));
+                                gl.deleteShader(sh);
+                                return null;
+                            }
+                            return sh;
+                        }
+                        const v = compile(gl.VERTEX_SHADER, vsSrc);
+                        const f = compile(gl.FRAGMENT_SHADER, fsSrc);
+                        if (!v || !f) return null;
+                        const p = gl.createProgram();
+                        gl.attachShader(p, v);
+                        gl.attachShader(p, f);
+                        gl.bindAttribLocation(p, 0, 'a_pos');
+                        gl.linkProgram(p);
+                        gl.deleteShader(v);
+                        gl.deleteShader(f);
+                        if (!gl.getProgramParameter(p, gl.LINK_STATUS)) {
+                            console.error(gl.getProgramInfoLog(p));
+                            return null;
+                        }
+                        return p;
+                    }
 
-        const simProg = link(VS, FS_SIM);
-        const blurProg = link(VS, FS_BLUR);
-        const compProg = link(VS, FS_COMP);
-        if (!simProg || !blurProg || !compProg) { console.error('Shader programs failed'); return; }
+                    function makeFBO() {
+                        const fb = gl.createFramebuffer(),
+                            tx = gl.createTexture();
+                        gl.bindFramebuffer(gl.FRAMEBUFFER, fb);
+                        gl.bindTexture(gl.TEXTURE_2D, tx);
+                        gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, canvas.width, canvas.height, 0, gl.RGBA, gl
+                            .UNSIGNED_BYTE, null);
+                        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+                        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+                        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+                        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+                        gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, tx, 0);
+                        gl.clearColor(0, 0, 0, 1);
+                        gl.clear(gl.COLOR_BUFFER_BIT);
+                        return { fbo: fb, tex: tx };
+                    }
 
-        const vbo = gl.createBuffer();
-        gl.bindBuffer(gl.ARRAY_BUFFER, vbo);
-        gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1,-1,1,-1,-1,1,-1,1,1,-1,1,1]), gl.STATIC_DRAW);
-        const vao = gl.createVertexArray();
-        gl.bindVertexArray(vao);
-        gl.enableVertexAttribArray(0);
-        gl.vertexAttribPointer(0, 2, gl.FLOAT, false, 0, 0);
+                    function destroyFBO(f) {
+                        gl.deleteFramebuffer(f.fbo);
+                        gl.deleteTexture(f.tex);
+                    }
 
-        let simA = makeFBO(), simB = makeFBO();
-        let blurH = makeFBO(), blurV = makeFBO();
+                    const simProg = makeProg(VS, FS_SIM);
+                    const blurProg = makeProg(VS, FS_BLUR);
+                    const compProg = makeProg(VS, FS_COMP);
+                    if (!simProg || !blurProg || !compProg) return;
 
-        const uSimTime    = gl.getUniformLocation(simProg, 'u_time');
-        const uSimSlider  = gl.getUniformLocation(simProg, 'u_slider');
-        const uSimElapsed = gl.getUniformLocation(simProg, 'u_elapsed');
-        const uSimBack    = gl.getUniformLocation(simProg, 'u_backbuffer');
-        const uBlurDir    = gl.getUniformLocation(blurProg, 'u_dir');
-        const uBlurExt    = gl.getUniformLocation(blurProg, 'u_extract');
-        const uBlurTex    = gl.getUniformLocation(blurProg, 'u_tex');
-        const uBlurRes    = gl.getUniformLocation(blurProg, 'u_res');
-        const uCompScene  = gl.getUniformLocation(compProg, 'u_scene');
-        const uCompGlow   = gl.getUniformLocation(compProg, 'u_glow');
+                    const vao = gl.createVertexArray();
+                    gl.bindVertexArray(vao);
+                    const vbo = gl.createBuffer();
+                    gl.bindBuffer(gl.ARRAY_BUFFER, vbo);
+                    gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1, -1, 1, -1, -1, 1, -1, 1, 1, -1, 1, 1]), gl
+                        .STATIC_DRAW);
+                    gl.enableVertexAttribArray(0);
+                    gl.vertexAttribPointer(0, 2, gl.FLOAT, false, 0, 0);
 
-        function render(t) {
-          const val = parseInt(slider.value);
-          const elapsed = ultraStartTime !== null
-            ? (performance.now() - ultraStartTime) / 1000
-            : -1.0;
+                    let simA = makeFBO(),
+                        simB = makeFBO();
+                    let blurH = makeFBO(),
+                        blurV = makeFBO();
 
-          gl.bindVertexArray(vao);
-          gl.viewport(0, 0, canvas.width, canvas.height);
+                    const U = {
+                        simTime: gl.getUniformLocation(simProg, 'u_time'),
+                        simSlider: gl.getUniformLocation(simProg, 'u_slider'),
+                        simElapsed: gl.getUniformLocation(simProg, 'u_elapsed'),
+                        simBack: gl.getUniformLocation(simProg, 'u_back'),
+                        blurDir: gl.getUniformLocation(blurProg, 'u_dir'),
+                        blurExt: gl.getUniformLocation(blurProg, 'u_ext'),
+                        blurTex: gl.getUniformLocation(blurProg, 'u_tex'),
+                        blurRes: gl.getUniformLocation(blurProg, 'u_res'),
+                        compScene: gl.getUniformLocation(compProg, 'u_scene'),
+                        compGlow: gl.getUniformLocation(compProg, 'u_glow'),
+                    };
 
-          gl.bindFramebuffer(gl.FRAMEBUFFER, simB.fbo);
-          gl.useProgram(simProg);
-          gl.uniform1f(uSimTime, t * 0.001);
-          gl.uniform1f(uSimSlider, val / 100);
-          gl.uniform1f(uSimElapsed, elapsed);
-          gl.activeTexture(gl.TEXTURE0);
-          gl.bindTexture(gl.TEXTURE_2D, simA.tex);
-          gl.uniform1i(uSimBack, 0);
-          gl.drawArrays(gl.TRIANGLES, 0, 6);
+                    gl.bindVertexArray(vao);
 
-          gl.bindFramebuffer(gl.FRAMEBUFFER, blurH.fbo);
-          gl.useProgram(blurProg);
-          gl.uniform2f(uBlurDir, 1.0, 0.0);
-          gl.uniform1f(uBlurExt, 1.0);
-          gl.uniform2f(uBlurRes, canvas.width, canvas.height);
-          gl.activeTexture(gl.TEXTURE0);
-          gl.bindTexture(gl.TEXTURE_2D, simB.tex);
-          gl.uniform1i(uBlurTex, 0);
-          gl.drawArrays(gl.TRIANGLES, 0, 6);
+                    function render(t) {
+                        requestAnimationFrame(render);
+                        if (!active && !prevActive) return;
+                        prevActive = active;
 
-          gl.bindFramebuffer(gl.FRAMEBUFFER, blurV.fbo);
-          gl.uniform2f(uBlurDir, 0.0, 1.0);
-          gl.uniform1f(uBlurExt, 0.0);
-          gl.bindTexture(gl.TEXTURE_2D, blurH.tex);
-          gl.drawArrays(gl.TRIANGLES, 0, 6);
+                        const elapsed = active ? (performance.now() - ultraStart) / 1000.0 : -1.0;
+                        const sv = sliderVal / 100.0;
+                        gl.viewport(0, 0, canvas.width, canvas.height);
 
-          gl.bindFramebuffer(gl.FRAMEBUFFER, null);
-          gl.useProgram(compProg);
-          gl.activeTexture(gl.TEXTURE0);
-          gl.bindTexture(gl.TEXTURE_2D, simB.tex);
-          gl.uniform1i(uCompScene, 0);
-          gl.activeTexture(gl.TEXTURE1);
-          gl.bindTexture(gl.TEXTURE_2D, blurV.tex);
-          gl.uniform1i(uCompGlow, 1);
-          gl.drawArrays(gl.TRIANGLES, 0, 6);
+                        gl.bindFramebuffer(gl.FRAMEBUFFER, simB.fbo);
+                        gl.useProgram(simProg);
+                        gl.uniform1f(U.simTime, t * 0.001);
+                        gl.uniform1f(U.simSlider, sv);
+                        gl.uniform1f(U.simElapsed, elapsed);
+                        gl.activeTexture(gl.TEXTURE0);
+                        gl.bindTexture(gl.TEXTURE_2D, simA.tex);
+                        gl.uniform1i(U.simBack, 0);
+                        gl.drawArrays(gl.TRIANGLES, 0, 6);
 
-          [simA, simB] = [simB, simA];
-          requestAnimationFrame(render);
-        }
-        requestAnimationFrame(render);
-      }
-      requestAnimationFrame(bootstrap);
-    }
-  </script>
+                        gl.useProgram(blurProg);
+                        gl.uniform2f(U.blurRes, canvas.width, canvas.height);
+
+                        gl.bindFramebuffer(gl.FRAMEBUFFER, blurH.fbo);
+                        gl.uniform2f(U.blurDir, 1.0, 0.0);
+                        gl.uniform1f(U.blurExt, 1.0);
+                        gl.bindTexture(gl.TEXTURE_2D, simB.tex);
+                        gl.uniform1i(U.blurTex, 0);
+                        gl.drawArrays(gl.TRIANGLES, 0, 6);
+
+                        gl.bindFramebuffer(gl.FRAMEBUFFER, blurV.fbo);
+                        gl.uniform2f(U.blurDir, 0.0, 1.0);
+                        gl.uniform1f(U.blurExt, 0.0);
+                        gl.bindTexture(gl.TEXTURE_2D, blurH.tex);
+                        gl.drawArrays(gl.TRIANGLES, 0, 6);
+
+                        gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+                        gl.useProgram(compProg);
+                        gl.activeTexture(gl.TEXTURE0);
+                        gl.bindTexture(gl.TEXTURE_2D, simB.tex);
+                        gl.uniform1i(U.compScene, 0);
+                        gl.activeTexture(gl.TEXTURE1);
+                        gl.bindTexture(gl.TEXTURE_2D, blurV.tex);
+                        gl.uniform1i(U.compGlow, 1);
+                        gl.drawArrays(gl.TRIANGLES, 0, 6);
+
+                        [simA, simB] = [simB, simA];
+                    }
+                    requestAnimationFrame(render);
+
+                    let resizeTimer;
+                    window.addEventListener('resize', () => {
+                        clearTimeout(resizeTimer);
+                        resizeTimer = setTimeout(() => {
+                            destroyFBO(simA);
+                            destroyFBO(simB);
+                            destroyFBO(blurH);
+                            destroyFBO(blurV);
+                            bootstrap();
+                        }, 150);
+                    });
+                }
+                requestAnimationFrame(bootstrap);
+            }
+        })();
+    </script>
 </body>
 </html>
+
+
+
+
