@@ -42,10 +42,33 @@
     .dot:nth-child(1) { left: 10%; } .dot:nth-child(2) { left: 30%; }
     .dot:nth-child(3) { left: 50%; } .dot:nth-child(4) { left: 70%; }
     .dot:nth-child(5) { left: 90%; }
+
+    /* ══════════════════════════════════════════
+       LEFT MASK — hides accumulation on the left
+       ══════════════════════════════════════════ */
+    .left-mask {
+      position: absolute;
+      inset: 0;
+      pointer-events: none;
+      z-index: 3;
+      background: linear-gradient(
+        to right,
+        #0a0a0b 0%,       /* fully opaque at left edge */
+        #0a0a0b 20%,      /* still fully hidden at 20% */
+        transparent 38%,  /* fully transparent at 38% — reveals fire from ~60% mark onward */
+        transparent 100%
+      );
+      opacity: 0;
+      transition: opacity 0.4s ease;
+    }
+    .track-wrapper.active .left-mask {
+      opacity: 1;
+    }
+
     input[type="range"] {
       position: absolute; inset: 0; width: 100%; height: 100%;
       background: transparent; -webkit-appearance: none; appearance: none;
-      cursor: pointer; z-index: 2; outline: none; margin: 0; padding: 0;
+      cursor: pointer; z-index: 5; outline: none; margin: 0; padding: 0;
     }
     input[type="range"]::-webkit-slider-thumb {
       -webkit-appearance: none; appearance: none; width: 26px; height: 26px;
@@ -84,6 +107,7 @@
     <div class="track-wrapper" id="trackWrapper">
       <div class="track-bg"></div>
       <canvas id="glCanvas"></canvas>
+      <div class="left-mask"></div>
       <div class="dots-layer">
         <span class="dot"></span><span class="dot"></span><span class="dot"></span><span class="dot"></span><span class="dot"></span>
       </div>
@@ -106,7 +130,6 @@
       const isUltra = val >= ULTRA_THRESHOLD;
       if (isUltra && ultraStartTime === null) ultraStartTime = performance.now();
       else if (!isUltra) ultraStartTime = null;
-
       if (val < 33) statusText.textContent = 'Low';
       else if (val < 66) statusText.textContent = 'Medium';
       else if (val < ULTRA_THRESHOLD) statusText.textContent = 'High';
@@ -149,7 +172,6 @@
           void main() {
             vec2 uv = v_uv;
 
-            // ── Grid ──
             vec2 gUV = uv * vec2(72.0, 6.0);
             vec2 cellId = floor(gUV);
             vec2 cellF = fract(gUV);
@@ -157,11 +179,9 @@
             vec2 ap = abs(cellF - 0.5);
             float cellMask = smoothstep(0.34, 0.22, max(ap.x * 0.9, ap.y));
 
-            // ── Temporal decay ──
             vec3 lastFrame = texture(u_backbuffer, uv).rgb;
             vec3 decayed = lastFrame * 0.91;
 
-            // ── Activation gate ──
             float act = smoothstep(0.95, 1.0, u_slider);
             if (act < 0.01 || u_elapsed < 0.0) {
               fragColor = vec4(decayed, 1.0);
@@ -169,77 +189,45 @@
             }
 
             float t = u_time;
-
-            // ══════════════════════════════════════
-            // TEMPORAL RAMP (weak → strong)
-            // Starts subtle, builds over ~5 seconds
-            // ══════════════════════════════════════
-            float timeRamp = smoothstep(0.0, 5.0, u_elapsed);
+            float timeRamp = smoothstep(0.0, 2.0, u_elapsed);
             timeRamp = timeRamp * timeRamp;
 
-            // ══════════════════════════════════════
-            // PROGRESSIVE SPREAD
-            // Speed also ramps up with timeRamp
-            // ══════════════════════════════════════
-            float baseSpeed = 0.08;
-            float fullSpeed = 0.14;
+            float baseSpeed = 0.28;
+            float fullSpeed = 0.94;
             float spreadSpeed = mix(baseSpeed, fullSpeed, timeRamp);
             float spreadDist = u_elapsed * spreadSpeed;
             float waveFront = max(u_slider - spreadDist, 0.02);
 
             float inZone = step(waveFront - 0.003, uv.x) * step(uv.x, u_slider + 0.003);
-
             float cellLoadTime = max(u_slider - uv.x, 0.0) / spreadSpeed;
             float cellAge = u_elapsed - cellLoadTime;
-
-            // ── Distance normalized ──
             float headDist = max(u_slider - uv.x, 0.0);
             float tailLen = max(u_slider - waveFront, 0.001);
             float dn = clamp(headDist / tailLen, 0.0, 1.0);
 
-            // ══════════════════════════════════════
-            // COMET TAIL BRIGHTNESS
-            // Base shape preserved, modulated by timeRamp
-            // ══════════════════════════════════════
             float tailBright = pow(1.0 - dn, 0.65);
             tailBright = max(tailBright, 0.04) * inZone;
             tailBright *= 1.0 - smoothstep(0.94, 1.05, dn);
 
-            // Overall energy scales from very weak to full
             float energyScale = mix(0.15, 1.0, timeRamp);
 
-            // ── Vertical flame ──
             float vertDist = abs(uv.y - 0.5) * 2.0;
             float vertFade = pow(max(1.0 - vertDist * vertDist * 0.45, 0.0), 0.75);
 
-            // ══════════════════════════════════════
-            // FLAME TURBULENCE
-            // Speed also ramps: starts slow, gets chaotic
-            // ══════════════════════════════════════
             float turbSpeed = mix(0.3, 1.0, timeRamp);
             float f1 = sin(uv.x * 30.0 + t * 15.0 * turbSpeed + seed * 6.28);
             float f2 = sin(uv.x * 17.0 + t * 8.0  * turbSpeed + seed * 3.14);
             float f3 = sin(uv.x * 52.0 + t * 25.0 * turbSpeed + seed * 10.0);
             float flame = smoothstep(0.08, 0.92, (f1 + f2 * 0.5 + f3 * 0.25) * 0.35 + 0.5);
 
-            // ══════════════════════════════════════
-            // LOADING RHYTHM PULSES
-            // ══════════════════════════════════════
             float r1 = sin(dn * 16.0 - t * 5.0 * turbSpeed + seed * 3.0);
             float r2 = sin(dn * 8.0  - t * 2.5 * turbSpeed + seed * 5.0);
             float rhythm = smoothstep(-0.15, 0.55, r1) * (r2 * 0.5 + 0.5);
             rhythm = pow(max(rhythm, 0.0), 1.2);
 
-            // ══════════════════════════════════════
-            // LOAD FLASH (cell ignites)
-            // ══════════════════════════════════════
             float loadActive = step(0.0, cellAge);
             float loadFlash = loadActive * exp(-cellAge * 2.5);
 
-            // ══════════════════════════════════════
-            // EMBERS
-            // Fewer sparks early, more as it builds
-            // ══════════════════════════════════════
             float sp = fract(t * (0.3 + seed * 0.15) + seed * 7.0);
             float sparkX = u_slider - sp * tailLen;
             float sparkY = 0.5 + sin(sp * 11.0 + seed * 6.28) * 0.28;
@@ -248,23 +236,16 @@
             spark *= (1.0 - sp) * (1.0 - sp);
             spark *= mix(0.15, 1.0, timeRamp);
 
-            // ══════════════════════════════════════
-            // COMBINE
-            // ══════════════════════════════════════
             float flameEnergy = tailBright * vertFade * (flame * 0.42 + rhythm * 0.38);
             flameEnergy += loadFlash * tailBright * vertFade * 0.55;
             flameEnergy += spark * 0.7 * inZone;
             flameEnergy *= energyScale;
 
-            // ── Scan line at wavefront ──
             float edgeScan = exp(-pow((uv.x - waveFront) * 18.0, 2.0));
             float edgeEnergy = edgeScan * 1.6 * act * energyScale;
 
             float totalEnergy = flameEnergy + edgeEnergy;
 
-            // ══════════════════════════════════════
-            // TEMPERATURE COLOR
-            // ══════════════════════════════════════
             vec3 white      = vec3(1.0, 0.94, 0.98);
             vec3 warmPurple = vec3(0.62, 0.32, 1.0);
             vec3 ember      = vec3(0.28, 0.10, 0.58);
@@ -275,12 +256,10 @@
 
             vec3 col = flameColor * totalEnergy;
 
-            // ── Core at slider head ──
             float corePulse = sin(t * 3.0) * 0.15 + 1.0;
             float core = exp(-pow((uv.x - u_slider) * 16.0, 2.0));
             col += white * core * 2.2 * corePulse * act * energyScale;
 
-            // ── Aura ──
             float aura = exp(-pow((uv.x - u_slider) * 3.5, 2.0));
             col += warmPurple * aura * 0.12 * act * energyScale;
 
