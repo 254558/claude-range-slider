@@ -1,9 +1,9 @@
 <template>
-  <EffortSlider />
+  <EffortCard />
 </template>
 
 <script setup>
-import EffortSlider from './components/EffortSlider.vue'
+import EffortCard from './components/EffortCard.vue';
 </script>
 
 <style>
